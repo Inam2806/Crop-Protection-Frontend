@@ -1,0 +1,1227 @@
+// ==========================================================================
+// Crop Protection System — Field Watch UI
+//
+// Direction: a night-time field-camera / thermal-scope instrument, not a
+// generic dashboard. Palette pulls from harvest gold (wheat, hazard lamps)
+// against a near-black field-at-night void, with a siren red reserved
+// strictly for active alerts. Mono type is used only where it displays real
+// telemetry (fps, coordinates, counts) — never as decoration.
+// ==========================================================================
+
+@import url('https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap');
+
+// --------------------------------------------------------------------------
+// Tokens
+// --------------------------------------------------------------------------
+
+$void:          #0A0F0C;   // field at night
+$void-deep:     #060908;
+$panel:         #10160F;
+$panel-raised:  #151D14;
+$hairline:      rgba(212, 164, 56, 0.16);
+$hairline-soft: rgba(236, 231, 216, 0.08);
+
+$gold:          #D4A438;   // wheat / hazard lamp — primary accent
+$gold-bright:   #F0C563;
+$gold-dim:      rgba(212, 164, 56, 0.14);
+
+$moss:          #4C6B52;
+$sage:          #93A491;   // secondary text
+$paper:         #ECE7D8;   // primary text — moonlit paper, not pure white
+
+$alert:         #E14B3D;   // siren red — alerts only
+$alert-bright:  #FF6B57;
+$safe:          #6FBF73;   // system-online state
+
+$font-display:  'Big Shoulders Display', 'Arial Narrow', sans-serif;
+$font-mono:     'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+$font-body:     'Inter', -apple-system, sans-serif;
+
+$radius-sm:  2px;
+$radius-md:  4px;
+$ease:       cubic-bezier(0.22, 0.61, 0.36, 1);
+
+.animal-meter {
+  margin-top: 1rem;
+}
+
+.animal-meter-track {
+  height: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(212, 164, 56, 0.35);
+  border-radius: 999px;
+  background: $void-deep;
+}
+
+.animal-meter-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, $safe, $gold, $alert);
+  transition: width 0.25s ease;
+}
+
+.animal-meter-scale {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.55rem;
+  color: $sage;
+  font-family: $font-mono;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  font-size: 0.7rem;
+}
+
+.animal-meter-scale strong {
+  color: $paper;
+  font-family: $font-body;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.location-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid $hairline-soft;
+  color: $sage;
+}
+
+.location-info-icon {
+  font-size: 1.1rem;
+}
+
+.location-info strong {
+  display: block;
+  color: $paper;
+  font-size: 0.8rem;
+}
+
+.location-info p {
+  margin: 0.25rem 0 0;
+  font-family: $font-mono;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  font-size: 0.75rem;
+}
+
+.location-info small {
+  display: block;
+  margin-top: 0.25rem;
+  color: $sage;
+  font-family: $font-body;
+}
+
+// --------------------------------------------------------------------------
+// Mixins
+// --------------------------------------------------------------------------
+
+@mixin panel {
+  background: linear-gradient(180deg, $panel-raised 0%, $panel 100%);
+  border: 1px solid $hairline;
+  border-radius: $radius-md;
+}
+
+@mixin mono-figure {
+  font-family: $font-mono;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+@mixin focus-ring {
+  &:focus-visible {
+    outline: 2px solid $gold-bright;
+    outline-offset: 2px;
+  }
+}
+
+// --------------------------------------------------------------------------
+// Keyframes
+// --------------------------------------------------------------------------
+
+@keyframes pulse-ring {
+  0%   { transform: scale(0.9); opacity: 0.7; }
+  70%  { transform: scale(1.8); opacity: 0; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+
+@keyframes rec-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.25; }
+}
+
+@keyframes scan-sweep {
+  0%   { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+@keyframes siren-flash {
+  0%, 100% { box-shadow: 0 0 0 rgba(225, 75, 61, 0); }
+  50%      { box-shadow: 0 0 24px rgba(225, 75, 61, 0.55); }
+}
+
+// --------------------------------------------------------------------------
+// Base / layout shell
+// --------------------------------------------------------------------------
+
+.app-container {
+  position: relative;
+  min-height: 100vh;
+  color: $paper;
+  font-family: $font-body;
+  overflow-x: hidden;
+}
+
+.app-background {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse at 20% -10%, rgba(212, 164, 56, 0.07), transparent 55%),
+    radial-gradient(ellipse at 100% 100%, rgba(76, 107, 82, 0.10), transparent 60%),
+    $void;
+
+  // faint horizontal scan texture — a field camera's sensor grain, not decoration
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: repeating-linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.015) 0px,
+      rgba(255, 255, 255, 0.015) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    pointer-events: none;
+  }
+}
+
+// --------------------------------------------------------------------------
+// Header
+// --------------------------------------------------------------------------
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1.5rem clamp(1.25rem, 4vw, 3rem);
+  border-bottom: 1px solid $hairline-soft;
+  flex-wrap: wrap;
+}
+
+.logo-container {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+
+  h1 {
+    margin: 0;
+    font-family: $font-display;
+    font-weight: 700;
+    font-size: clamp(1.4rem, 2.4vw, 1.9rem);
+    letter-spacing: 0.01em;
+    color: $paper;
+  }
+
+  p {
+    margin: 0.15rem 0 0;
+    font-size: 0.8rem;
+    color: $sage;
+  }
+}
+
+.logo-icon {
+  font-size: 1.8rem;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  background: $gold-dim;
+  border: 1px solid $hairline;
+  border-radius: $radius-md;
+}
+
+.header-badge {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.badge {
+  @include mono-figure;
+  font-size: 0.68rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid $hairline;
+  border-radius: $radius-sm;
+  color: $sage;
+  background: rgba(212, 164, 56, 0.05);
+}
+
+// --------------------------------------------------------------------------
+// Main content
+// --------------------------------------------------------------------------
+
+.main-content {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 1.75rem clamp(1.25rem, 4vw, 3rem) 4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.glass {
+  @include panel;
+  backdrop-filter: blur(6px);
+}
+
+// --------------------------------------------------------------------------
+// Control card
+// --------------------------------------------------------------------------
+
+.control-card {
+  padding: 1.25rem 1.4rem;
+}
+
+.control-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.status-dot {
+  position: relative;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+
+  &.active {
+    background: $safe;
+    box-shadow: 0 0 8px rgba(111, 191, 115, 0.7);
+  }
+
+  &.inactive {
+    background: $sage;
+    opacity: 0.4;
+  }
+
+  .pulse-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 1.5px solid $safe;
+    opacity: 0;
+  }
+
+  &.active .pulse-ring {
+    animation: pulse-ring 1.8s ease-out infinite;
+  }
+}
+
+.status-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.status-label {
+  font-size: 0.68rem;
+  color: $sage;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.status-value {
+  font-family: $font-display;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+
+  &.active  { color: $safe; }
+  &.inactive { color: $sage; }
+}
+
+.fps-display {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.4rem 0.75rem;
+  background: $void-deep;
+  border: 1px solid $hairline;
+  border-radius: $radius-sm;
+}
+
+.fps-value {
+  @include mono-figure;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: $gold-bright;
+}
+
+.fps-label {
+  @include mono-figure;
+  font-size: 0.65rem;
+  color: $sage;
+}
+
+.model-info-display {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid $hairline-soft;
+}
+
+.model-badge {
+  @include mono-figure;
+  font-size: 0.72rem;
+  color: $sage;
+  padding: 0.3rem 0.6rem;
+  border-radius: $radius-sm;
+  background: rgba(236, 231, 216, 0.04);
+}
+
+// --------------------------------------------------------------------------
+// Buttons
+// --------------------------------------------------------------------------
+
+.button-group {
+  display: flex;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  margin-top: 1.1rem;
+}
+
+.btn {
+  @include focus-ring;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: $font-body;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: $paper;
+  padding: 0.65rem 1.1rem;
+  border-radius: $radius-sm;
+  border: 1px solid $hairline;
+  background: rgba(236, 231, 216, 0.03);
+  cursor: pointer;
+  transition: background 0.18s $ease, border-color 0.18s $ease, transform 0.12s $ease;
+
+  &:hover  { background: rgba(236, 231, 216, 0.07); }
+  &:active { transform: translateY(1px); }
+  &:disabled { opacity: 0.55; cursor: progress; }
+}
+
+.btn-icon {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.btn-location {
+  &.active {
+    border-color: rgba(212, 164, 56, 0.5);
+    background: $gold-dim;
+    color: $gold-bright;
+  }
+}
+
+.location-prompt {
+  margin-top: 1rem;
+}
+
+.btn-toggle {
+  &.inactive {
+    border-color: rgba(111, 191, 115, 0.4);
+    color: $safe;
+  }
+
+  &.active {
+    border-color: rgba(225, 75, 61, 0.45);
+    background: rgba(225, 75, 61, 0.1);
+    color: $alert-bright;
+  }
+}
+
+.btn-info.active {
+  border-color: $hairline;
+  background: rgba(236, 231, 216, 0.08);
+}
+
+// --------------------------------------------------------------------------
+// Location / error status lines
+// --------------------------------------------------------------------------
+
+.location-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.8rem;
+  color: $sage;
+  background: rgba(212, 164, 56, 0.05);
+  border: 1px solid $hairline;
+  border-radius: $radius-sm;
+  flex-wrap: wrap;
+}
+
+.location-text { color: $paper; }
+
+.location-coords {
+  @include mono-figure;
+  font-size: 0.72rem;
+  color: $sage;
+  margin-left: auto;
+}
+
+.location-error,
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.9rem;
+  padding: 0.65rem 0.9rem;
+  font-size: 0.82rem;
+  color: $alert-bright;
+  background: rgba(225, 75, 61, 0.08);
+  border: 1px solid rgba(225, 75, 61, 0.3);
+  border-radius: $radius-sm;
+}
+
+.error-banner {
+  margin-top: 0;
+}
+
+.error-close {
+  @include focus-ring;
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.9rem;
+  opacity: 0.8;
+
+  &:hover { opacity: 1; }
+}
+
+// --------------------------------------------------------------------------
+// Camera view — the hero
+// --------------------------------------------------------------------------
+
+.camera-view-container {
+  position: relative;
+  border-radius: $radius-md;
+  overflow: hidden;
+  border: 1px solid $hairline;
+  background: $void-deep;
+  aspect-ratio: 4 / 3;
+}
+
+.camera-feed-active {
+  position: relative;
+  width: 100%;
+  height: 100%;
+
+  video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    filter: saturate(0.85) contrast(1.05);
+  }
+
+  // viewfinder corner brackets — functional framing, not ornament
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    border: 2px solid $gold;
+    opacity: 0.85;
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  &::before {
+    top: 10px;
+    left: 10px;
+    border-right: none;
+    border-bottom: none;
+  }
+
+  &::after {
+    bottom: 10px;
+    right: 10px;
+    border-left: none;
+    border-top: none;
+  }
+}
+
+.hidden-canvas {
+  display: none;
+}
+
+.detection-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.bounding-box {
+  position: absolute;
+  border-width: 2px;
+  border-style: solid;
+  border-radius: 0;
+  // Animate updates between sampled YOLO frames without a long box lag.
+  transition: left 0.13s linear, top 0.13s linear, width 0.13s linear, height 0.13s linear;
+}
+
+.bounding-label {
+  position: absolute;
+  top: -1.55rem;
+  left: -2px;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: $radius-sm $radius-sm 0 0;
+  white-space: nowrap;
+}
+
+.label-class {
+  font-family: $font-body;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: $void-deep;
+}
+
+.label-confidence {
+  @include mono-figure;
+  font-size: 0.68rem;
+  color: rgba(6, 9, 8, 0.75);
+}
+
+.camera-overlay-info {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  z-index: 4;
+}
+
+.overlay-badge {
+  @include mono-figure;
+  font-size: 0.7rem;
+  color: $paper;
+  padding: 0.3rem 0.55rem;
+  background: rgba(6, 9, 8, 0.65);
+  border: 1px solid rgba(236, 231, 216, 0.15);
+  border-radius: $radius-sm;
+  backdrop-filter: blur(3px);
+
+  &:first-child {
+    color: $alert-bright;
+    border-color: rgba(225, 75, 61, 0.4);
+    animation: rec-blink 1.4s steps(2, jump-none) infinite;
+  }
+}
+
+.camera-feed-inactive {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  text-align: center;
+  padding: 2rem;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 40%;
+    background: linear-gradient(to bottom, transparent, rgba(212, 164, 56, 0.05), transparent);
+    animation: scan-sweep 5s linear infinite;
+    pointer-events: none;
+  }
+
+  h3 {
+    font-family: $font-display;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: $sage;
+    margin: 0.4rem 0 0.1rem;
+  }
+
+  p {
+    font-size: 0.85rem;
+    color: rgba(147, 164, 145, 0.7);
+    margin: 0;
+  }
+}
+
+.inactive-icon {
+  font-size: 2.2rem;
+  opacity: 0.5;
+}
+
+// --------------------------------------------------------------------------
+// Detection stats panel
+// --------------------------------------------------------------------------
+
+.stats-panel {
+  padding: 1.1rem 1.3rem;
+}
+
+.stats-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.9rem;
+
+  h4 {
+    margin: 0;
+    font-family: $font-display;
+    font-size: 1rem;
+    font-weight: 700;
+    color: $paper;
+  }
+}
+
+.stats-total {
+  @include mono-figure;
+  font-size: 0.78rem;
+  color: $gold-bright;
+}
+
+.stats-top-classes {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.9rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid $hairline-soft;
+}
+
+.stats-label {
+  font-size: 0.72rem;
+  color: $sage;
+}
+
+.stats-class {
+  @include mono-figure;
+  font-size: 0.72rem;
+  padding: 0.25rem 0.55rem;
+  background: rgba(212, 164, 56, 0.08);
+  border: 1px solid $hairline;
+  border-radius: $radius-sm;
+  color: $gold-bright;
+}
+
+.stats-all-classes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.stats-item {
+  display: grid;
+  grid-template-columns: 90px 1fr 32px;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.stats-item-name {
+  font-size: 0.75rem;
+  color: $sage;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.stats-bar-container {
+  height: 6px;
+  background: rgba(236, 231, 216, 0.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.stats-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s $ease;
+}
+
+.stats-item-count {
+  @include mono-figure;
+  font-size: 0.75rem;
+  color: $paper;
+  text-align: right;
+}
+
+// --------------------------------------------------------------------------
+// Info panel
+// --------------------------------------------------------------------------
+
+.info-panel {
+  padding: 1.25rem 1.4rem;
+}
+
+.info-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.9rem;
+
+  h3 {
+    margin: 0;
+    font-family: $font-display;
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+}
+
+.info-close {
+  @include focus-ring;
+  background: none;
+  border: none;
+  color: $sage;
+  cursor: pointer;
+  font-size: 0.95rem;
+
+  &:hover { color: $paper; }
+}
+
+.info-content {
+  p {
+    font-size: 0.88rem;
+    line-height: 1.6;
+    color: $sage;
+    max-width: 62ch;
+
+    strong {
+      color: $gold-bright;
+      font-weight: 600;
+    }
+  }
+}
+
+.info-highlight {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 1rem 0;
+}
+
+.highlight-badge {
+  @include mono-figure;
+  font-size: 0.7rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: $radius-sm;
+  border: 1px solid $hairline;
+  color: $gold-bright;
+  background: $gold-dim;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.9rem;
+  margin-top: 1rem;
+}
+
+.info-card {
+  padding: 1rem;
+  border: 1px solid $hairline-soft;
+  border-radius: $radius-md;
+  background: rgba(236, 231, 216, 0.03);
+
+  h4 {
+    font-family: $font-display;
+    font-size: 0.92rem;
+    font-weight: 700;
+    margin: 0.5rem 0 0.3rem;
+    color: $paper;
+  }
+
+  p {
+    font-size: 0.8rem;
+    color: $sage;
+    line-height: 1.5;
+    margin: 0;
+  }
+}
+
+.info-icon {
+  font-size: 1.3rem;
+}
+
+// --------------------------------------------------------------------------
+// Responsive
+// --------------------------------------------------------------------------
+
+@media (max-width: 640px) {
+  .app-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .control-header {
+    align-items: flex-start;
+  }
+
+  .button-group .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .stats-item {
+    grid-template-columns: 70px 1fr 28px;
+  }
+
+  .camera-view-container {
+    aspect-ratio: 3 / 4;
+  }
+}
+
+// --------------------------------------------------------------------------
+// Reduced motion
+// --------------------------------------------------------------------------
+
+@media (prefers-reduced-motion: reduce) {
+  .status-dot .pulse-ring,
+  .overlay-badge:first-child,
+  .camera-feed-inactive::before {
+    animation: none;
+  }
+
+  .bounding-box,
+  .stats-bar,
+  .btn {
+    transition: none;
+  }
+}
+.location-save-status {
+  font-size: 12px;
+  padding: 2px 10px;
+  border-radius: 12px;
+  margin-left: 10px;
+  
+  &.success {
+    background: #00F0A0;
+    color: #1a1a2e;
+  }
+  
+  &.error {
+    background: #FF6B6B;
+    color: white;
+  }
+}
+.manual-location-section {
+  margin-top: 0.9rem;
+  padding: 0.8rem;
+  border: 1px solid $hairline;
+  border-radius: $radius-sm;
+  background: rgba(212, 164, 56, 0.05);
+}
+
+.manual-location-form {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  
+  .btn {
+    flex-shrink: 0;
+  }
+}
+
+.location-input {
+  flex: 1;
+  min-width: 120px;
+  padding: 0.5rem 0.7rem;
+  background: $void-deep;
+  border: 1px solid $hairline;
+  border-radius: $radius-sm;
+  color: $paper;
+  font-family: $font-mono;
+  font-size: 0.8rem;
+  
+  &:focus {
+    outline: 2px solid $gold-bright;
+    outline-offset: 1px;
+  }
+  
+  &::placeholder {
+    color: rgba(147, 164, 145, 0.5);
+  }
+}
+
+.manual-location-help {
+  margin-top: 0.5rem;
+  
+  small {
+    color: $sage;
+    font-size: 0.7rem;
+  }
+}
+// ============================================================================
+// Frontend update: camera identity, verified location, Twilio status, and photos
+// These additions preserve the supplied night-field theme and typography.
+// ============================================================================
+
+* { box-sizing: border-box; }
+html, body, #root { min-height: 100%; margin: 0; }
+body { background: $void; color: $paper; }
+button, input, select { font: inherit; }
+a { color: $gold-bright; text-underline-offset: 3px; }
+
+.panel-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+  h3 { margin: 0; font-family: $font-display; font-size: 1.2rem; }
+}
+.panel-subtitle, .panel-desc, .fine-print {
+  color: $sage;
+  font-size: 0.77rem;
+  line-height: 1.5;
+}
+.panel-desc { margin: 0.5rem 0 0.9rem; }
+.fine-print { margin: 0.85rem 0 0; }
+
+.control-grid, .location-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin-top: 1.2rem;
+}
+.location-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 1rem; }
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+  label { font-size: 0.78rem; color: $sage; }
+  .location-input, .crop-select { width: 100%; min-width: 0; }
+}
+.crop-select {
+  width: 100%;
+  min-height: 39px;
+  padding: 0.5rem 0.7rem;
+  color: $paper;
+  background: $void-deep;
+  border: 1px solid $hairline;
+  border-radius: $radius-sm;
+  font-family: $font-body;
+  font-size: 0.84rem;
+  &:focus-visible { outline: 2px solid $gold-bright; outline-offset: 2px; }
+  option { color: $paper; background: $panel; }
+}
+.location-input { min-height: 39px; }
+.field-group input:disabled, .field-group select:disabled { opacity: 0.55; }
+.btn-upload { cursor: pointer; }
+.btn-upload.is-disabled { opacity: 0.5; pointer-events: none; }
+.sound-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  color: $sage;
+  padding: 0.45rem 0;
+  cursor: pointer;
+  input { accent-color: $gold; }
+}
+
+.location-panel, .alert-panel { padding: 1.15rem 1.4rem; }
+.button-group.compact { margin-top: 0.8rem; }
+.location-status { justify-content: space-between; }
+.notice-banner {
+  @extend .error-banner;
+  border-color: rgba(111, 191, 115, 0.28);
+  background: rgba(111, 191, 115, 0.06);
+  color: $safe;
+}
+
+.camera-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  color: $sage;
+  font-size: 0.77rem;
+  strong { color: $paper; }
+}
+.camera-view-container {
+  aspect-ratio: 16 / 10;
+  min-height: 280px;
+  background: $void-deep;
+  .camera-video, .camera-image {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    inset: 0;
+    object-fit: contain; // box scaling in App.jsx assumes contain, not cover
+    display: block;
+  }
+  .camera-video.is-hidden { display: none; }
+  .camera-feed-inactive { z-index: 1; }
+  .detection-overlay { z-index: 3; }
+  .camera-overlay-info { z-index: 4; }
+  .bounding-label { top: 0; max-width: 100%; }
+  .bounding-label > span { overflow: hidden; text-overflow: ellipsis; }
+}
+
+.summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.8rem; }
+.summary-card {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  span { font-size: 0.78rem; color: $sage; }
+  strong { @include mono-figure; font-size: clamp(1.2rem, 3vw, 2rem); color: $gold-bright; }
+  small { font-size: 0.67rem; color: $sage; }
+}
+
+.count-chips { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.8rem; }
+.count-chips .stats-class {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
+  i { width: 7px; height: 7px; border-radius: 50%; }
+  strong { color: $paper; }
+}
+.empty-state { color: $sage; font-size: 0.83rem; }
+.detection-table { margin-top: 1rem; border-top: 1px solid $hairline-soft; }
+.detection-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(150px, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid $hairline-soft;
+  font-size: 0.77rem;
+  > span:nth-child(2) { color: $sage; }
+}
+.score-badge {
+  padding: 0.24rem 0.55rem;
+  background: rgba(212,164,56,.10);
+  border: 1px solid $hairline;
+  border-radius: $radius-sm;
+  white-space: nowrap;
+  color: $gold-bright;
+  &.unknown { background: rgba(147,164,145,.10); color: $sage; }
+}
+.caution-text { font-size: 0.8rem; color: $alert-bright; }
+
+.alert-state {
+  @include mono-figure;
+  font-size: 0.7rem;
+  border: 1px solid $hairline;
+  border-radius: $radius-sm;
+  padding: 0.3rem 0.55rem;
+  color: $sage;
+  overflow-wrap: anywhere;
+}
+.alert-state.state-partially_accepted {
+  color: $safe; border-color: rgba(111,191,115,.35); background: rgba(111,191,115,.08);
+}
+.alert-state.state-failed,
+.alert-state.state-not_configured {
+  color: $alert-bright; border-color: rgba(225,75,61,.35); background: rgba(225,75,61,.08);
+}
+.alert-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 0.7rem;
+  > div { background: rgba(236,231,216,.035); border: 1px solid $hairline-soft; padding: .75rem; border-radius: $radius-sm; min-width: 0; }
+  small { display:block; color: $sage; font-size: .72rem; margin-bottom: .25rem; }
+  strong { font-size: .81rem; color: $paper; overflow-wrap: anywhere; }
+}
+.alert-problems {
+  margin-top: 0.7rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid rgba(225,75,61,.3);
+  border-radius: $radius-sm;
+  color: $alert-bright;
+  p { margin: .25rem 0; font-size: .78rem; overflow-wrap: anywhere; }
+}
+.snapshot-link {
+  margin-top: 0.85rem;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-width: 340px;
+  font-size: 0.8rem;
+  text-decoration: none;
+  img { width: 100%; max-height: 190px; object-fit: contain; border: 1px solid $hairline; border-radius: $radius-sm; }
+}
+.location-summary {
+  padding: 0.9rem 1.1rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  color: $sage;
+}
+
+@media (max-width: 740px) {
+  .location-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .control-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .detection-row { grid-template-columns: 1fr 1fr; }
+  .detection-row .score-badge { grid-column: 1 / -1; justify-self: start; }
+}
+@media (max-width: 540px) {
+  .main-content { padding: 1rem .85rem 2.5rem; }
+  .control-grid, .location-grid { grid-template-columns: 1fr; }
+  .summary-grid { grid-template-columns: 1fr 1fr; }
+  .summary-grid .summary-card:last-child { grid-column: 1 / -1; }
+  .alert-facts { grid-template-columns: 1fr 1fr; }
+  .camera-view-container { min-height: 250px; aspect-ratio: 4 / 3; }
+  .camera-toolbar { flex-direction: column; align-items: flex-start; }
+  .bounding-label { gap: .2rem; font-size: .65rem; }
+}
+
+// Helpful routing diagnostics for CRA/Vite proxy configuration errors.
+.error-message { min-width: 0; overflow-wrap: anywhere; flex: 1; }
+.api-route-help {
+  margin-top: .5rem;
+  font-size: .8rem;
+  line-height: 1.5;
+  color: #ECE7D8;
+  a { color: #F0C563; text-decoration: underline; text-underline-offset: 3px; }
+}
+
+/* Meta WhatsApp alert state */
+.alert-state.state-accepted_by_meta { color: #59cba3; }
